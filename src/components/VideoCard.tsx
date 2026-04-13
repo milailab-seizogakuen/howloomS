@@ -1,8 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import YouTubePlayer from '@/components/YouTubePlayer'
+import LoomPlayer from '@/components/LoomPlayer'
 import type { Video, VideoProgress } from '@/types/database'
 
 interface VideoCardProps {
@@ -17,28 +16,14 @@ export default function VideoCard({ video, progress, onComplete }: VideoCardProp
 
     const handleMarkComplete = async () => {
         if (isCompleted) return
-
         setIsCompleting(true)
-
         try {
-            const supabase = createClient()
-            const { data: { user } } = await supabase.auth.getUser()
-
-            if (!user) return
-
-            // Upsert video progress
-            const { error } = await supabase
-                .from('video_progress')
-                .upsert({
-                    user_id: user.id,
-                    video_id: video.id,
-                    is_completed: true,
-                    completed_at: new Date().toISOString(),
-                }, {
-                    onConflict: 'user_id,video_id',
-                })
-
-            if (!error) {
+            const res = await fetch('/api/progress', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ videoId: video.id, isCompleted: true }),
+            })
+            if (res.ok) {
                 setIsCompleted(true)
                 onComplete(video.id)
             }
@@ -51,7 +36,7 @@ export default function VideoCard({ video, progress, onComplete }: VideoCardProp
 
     return (
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            <YouTubePlayer videoId={video.video_id} title={video.title} />
+            <LoomPlayer loomId={video.video_id} title={video.title} />
 
             <div className="p-4">
                 <div className="flex items-start justify-between gap-4">

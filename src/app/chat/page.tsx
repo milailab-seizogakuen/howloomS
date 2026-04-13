@@ -3,66 +3,50 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import type { Profile, Chat } from '@/types/database'
-import type { RealtimePostgresInsertPayload } from '@supabase/supabase-js'
 
-
+const ADMIN_NAME = process.env.NEXT_PUBLIC_ADMIN_NAME ?? 'Howl'
 
 export default function ChatPage() {
     const router = useRouter()
     const messagesEndRef = useRef<HTMLDivElement>(null)
+    const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
     const [profile, setProfile] = useState<Profile | null>(null)
     const [messages, setMessages] = useState<Chat[]>([])
     const [newMessage, setNewMessage] = useState('')
     const [isLoading, setIsLoading] = useState(true)
     const [isSending, setIsSending] = useState(false)
-    const [sendError, setSendError] = useState<string | null>(null)
+    const [error, setError] = useState<string | null>(null)
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
 
+    const fetchMessages = useCallback(async () => {
+        const res = await fetch('/api/chat/messages')
+        if (res.ok) {
+            const { messages: msgs } = await res.json()
+            setMessages(msgs ?? [])
+        }
+    }, [])
+
     const fetchData = useCallback(async () => {
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
+        const authRes = await fetch('/api/auth/me')
+        if (!authRes.ok) { router.push('/login'); return }
 
-        if (!user) {
-            router.push('/login')
-            return
-        }
+        const profileRes = await fetch('/api/profile')
+        if (!profileRes.ok) { router.push('/onboarding'); return }
+        const { profile: profileData } = await profileRes.json()
 
-        const { data: profileData } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('user_id', user.id)
-            .single()
-
-        if (!profileData) {
-            router.push('/onboarding')
-            return
-        }
-
-        // Check if user is approved
-        if (!profileData.is_approved) {
-            router.push('/approval-pending')
-            return
-        }
-
+        if (!profileData.is_approved) { router.push('/approval-pending'); return }
         setProfile(profileData)
 
-        const { data: messagesData } = await supabase
-            .from('chats')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('created_at', { ascending: true })
-
-        if (messagesData) {
-            setMessages(messagesData)
-        }
-
+        await fetchMessages()
         setIsLoading(false)
-    }, [router])
+
+        // 5秒おきにポーリング
+        pollingRef.current = setInterval(fetchMessages, 5000)
+    }, [router, fetchMessages])
 
     useEffect(() => {
         fetchData()
@@ -73,51 +57,28 @@ export default function ChatPage() {
     }, [messages])
 
     useEffect(() => {
-        if (!profile) return
-
-        const supabase = createClient()
-
-        const channel = supabase
-            .channel('chat-updates')
-            .on(
-                'postgres_changes',
-                {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'chats',
-                    filter: `user_id=eq.${profile.user_id}`,
-                },
-                (payload: RealtimePostgresInsertPayload<Chat>) => {
-                    setMessages(prev => [...prev, payload.new])
-                }
-            )
-            .subscribe()
-
         return () => {
-            supabase.removeChannel(channel)
+            if (pollingRef.current) clearInterval(pollingRef.current)
         }
-    }, [profile])
+    }, [])
 
     const handleSend = async () => {
         if (!newMessage.trim() || !profile) return
 
-        setSendError(null)
+        setError(null)
         setIsSending(true)
 
         try {
-            const supabase = createClient()
-
-            const { error } = await supabase.from('chats').insert({
-                user_id: profile.user_id,
-                sender_type: 'user',
-                message: newMessage.trim(),
+            const res = await fetch('/api/chat/messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: newMessage.trim() }),
             })
-
-            if (error) throw error
-
+            if (!res.ok) throw new Error('send failed')
             setNewMessage('')
+            await fetchMessages()
         } catch {
-            setSendError('送信に失敗しました。タップして再試行してください。')
+            setError('送信に失敗しました。タップして再試行してください。')
         } finally {
             setIsSending(false)
         }
@@ -226,13 +187,13 @@ export default function ChatPage() {
             </main>
 
             {/* Error Toast */}
-            {sendError && (
+            {error && (
                 <div className="px-4 py-2">
                     <div
                         className="max-w-3xl mx-auto p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center justify-between"
-                        onClick={() => { setSendError(null); handleSend() }}
+                        onClick={() => { setError(null); handleSend() }}
                     >
-                        <span>{sendError}</span>
+                        <span>{error}</span>
                         <button className="text-red-600 underline">再試行</button>
                     </div>
                 </div>

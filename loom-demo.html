@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Loom Player デモ</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { color: white; text-align: center; margin-bottom: 30px; font-size: 28px; }
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+        }
+        label { display: block; font-weight: 600; margin-bottom: 8px; color: #333; }
+        input {
+            width: 100%;
+            padding: 14px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            margin-bottom: 16px;
+        }
+        input:focus { outline: none; border-color: #667eea; }
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button:hover { opacity: 0.9; }
+        .player-container {
+            margin-top: 20px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+            aspect-ratio: 16/9;
+        }
+        iframe { width: 100%; height: 100%; border: none; }
+        .hidden { display: none; }
+        .info { color: #666; font-size: 14px; margin-top: 12px; }
+        code { background: #f0f0f0; padding: 4px 8px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 Loom Player デモ</h1>
+        
+        <div class="card">
+            <label>Loom URL または ID を入力：</label>
+            <input type="text" id="loomInput" placeholder="https://www.loom.com/share/xxxxx または ID">
+            <button onclick="playVideo()">▶ 再生する</button>
+            
+            <div id="playerWrapper" class="hidden">
+                <div class="player-container">
+                    <iframe id="loomPlayer" allowfullscreen></iframe>
+                </div>
+                <p class="info">Loom ID: <code id="currentId"></code></p>
+            </div>
+        </div>
+
+        <div class="card" style="background: #f8f9fa;">
+            <p style="color: #666; font-size: 14px;">
+                💡 <strong>使い方:</strong> LoomのURLをコピペして「再生する」をクリック<br><br>
+                例: <code>https://www.loom.com/share/679eefb452f640c3af83e25ce36a695a</code>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        function playVideo() {
+            const input = document.getElementById('loomInput').value.trim();
+            if (!input) return alert('URLまたはIDを入力してください');
+            
+            // Extract Loom ID from URL or use as-is
+            const match = input.match(/loom\.com\/(?:share|embed)\/([a-zA-Z0-9]+)/);
+            const loomId = match ? match[1] : input;
+            
+            // Update iframe
+            document.getElementById('loomPlayer').src = `https://www.loom.com/embed/${loomId}`;
+            document.getElementById('currentId').textContent = loomId;
+            document.getElementById('playerWrapper').classList.remove('hidden');
+        }
+
+        // Enter key support
+        document.getElementById('loomInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') playVideo();
+        });
+    </script>
+</body>
+</html>

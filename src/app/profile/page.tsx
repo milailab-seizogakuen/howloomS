@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { profileSchema, AI_TOOLS_OPTIONS, type ProfileFormData } from '@/lib/validations/profile'
 import type { Profile } from '@/types/database'
 
@@ -30,30 +29,14 @@ export default function ProfilePage() {
     const LOCALIZED_AI_TOOLS_OPTIONS = AI_TOOLS_OPTIONS
 
     const fetchProfile = useCallback(async () => {
-        const supabase = createClient()
-        const { data: { user } } = await supabase.auth.getUser()
+        const authRes = await fetch('/api/auth/me')
+        if (!authRes.ok) { router.push('/login'); return }
 
-        if (!user) {
-            router.push('/login')
-            return
-        }
+        const profileRes = await fetch('/api/profile')
+        if (!profileRes.ok) { router.push('/onboarding'); return }
+        const { profile: profileData } = await profileRes.json()
 
-        const { data: profileData } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('user_id', user.id)
-            .single()
-
-        if (!profileData) {
-            router.push('/onboarding')
-            return
-        }
-
-        // Check if user is approved
-        if (!profileData.is_approved) {
-            router.push('/approval-pending')
-            return
-        }
+        if (!profileData.is_approved) { router.push('/approval-pending'); return }
 
         setProfile(profileData)
         setFormData({
@@ -97,23 +80,18 @@ export default function ProfilePage() {
         }
 
         setIsSaving(true)
-
         try {
-            const supabase = createClient()
-
-            const { error: updateError } = await supabase
-                .from('profiles')
-                .update({
+            const res = await fetch('/api/profile', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     name: formData.name,
                     has_met: formData.has_met,
                     ai_tools: formData.ai_tools,
                     motivation: formData.motivation,
-                    updated_at: new Date().toISOString(),
                 })
-                .eq('id', profile!.id)
-
-            if (updateError) throw updateError
-
+            })
+            if (!res.ok) throw new Error('save failed')
             setSuccess(true)
             setTimeout(() => setSuccess(false), 3000)
         } catch {
@@ -125,10 +103,8 @@ export default function ProfilePage() {
 
     const handleLogout = async () => {
         setIsLoggingOut(true)
-
         try {
-            const supabase = createClient()
-            await supabase.auth.signOut()
+            await fetch('/api/auth/logout', { method: 'POST' })
             router.push('/login')
         } catch {
             setError('ログアウトに失敗しました。')

@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { gradeQuiz } from '@/lib/utils'
 import type { Quiz, QuizQuestion } from '@/types/database'
 
@@ -31,32 +30,13 @@ export default function QuizClient({ courseId, quizId }: QuizClientProps) {
     const [isSubmitting, setIsSubmitting] = useState(false)
 
     const fetchQuiz = useCallback(async () => {
-        const supabase = createClient()
+        const authRes = await fetch('/api/auth/me')
+        if (!authRes.ok) { router.push('/login'); return }
 
-        // Check authentication and approval
-        const { data: { user } } = await supabase.auth.getUser()
-        if (!user) {
-            router.push('/login')
-            return
-        }
+        const quizRes = await fetch(`/api/quizzes/${quizId}`)
+        if (!quizRes.ok) { router.push('/dashboard'); return }
 
-        const { data: profileData } = await supabase
-            .from('profiles')
-            .select('is_approved')
-            .eq('user_id', user.id)
-            .single()
-
-        if (!profileData?.is_approved) {
-            router.push('/approval-pending')
-            return
-        }
-
-        const { data: quizData } = await supabase
-            .from('quizzes')
-            .select('*')
-            .eq('id', quizId)
-            .single()
-
+        const { quiz: quizData } = await quizRes.json()
         if (quizData) {
             setQuiz(quizData)
             setAnswers(new Array(quizData.questions.length).fill([]))
@@ -88,26 +68,15 @@ export default function QuizClient({ courseId, quizId }: QuizClientProps) {
     const handleSubmit = async () => {
         if (!quiz) return
         setIsSubmitting(true)
-
         try {
-            const supabase = createClient()
-            const { data: { user } } = await supabase.auth.getUser()
-
-            if (!user) {
-                router.push('/login')
-                return
-            }
-
             const correctAnswers = quiz.questions.map(q => q.correct_answers)
             const gradeResult = gradeQuiz(answers, correctAnswers)
             const passed = gradeResult.percentage >= quiz.passing_score
 
-            await supabase.from('quiz_results').insert({
-                user_id: user.id,
-                quiz_id: quiz.id,
-                score: gradeResult.percentage,
-                passed,
-                answers,
+            await fetch('/api/quiz-results', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ quizId: quiz.id, score: gradeResult.percentage, passed, answers }),
             })
 
             setResult({ ...gradeResult, passed })

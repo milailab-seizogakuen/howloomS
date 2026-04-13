@@ -20,7 +20,7 @@
   --foreground: var(--howl-text);
 }
 
-@theme inline {
+@theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-shippori-antique), var(--font-inter), sans-serif;
@@ -34,6 +34,11 @@ body {
   background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
 }
 
 /* Updated Display Font for Headers to use Sans */

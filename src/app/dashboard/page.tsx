@@ -1,51 +1,89 @@
-import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { calculateProgress } from '@/lib/utils'
+import DashboardClient from './DashboardClient'
+import { cookies } from 'next/headers'
+import { verifyJwt, COOKIE_NAME } from '@/lib/auth'
+import { getCourses, getVideos, getVideoProgressByUserId, getAllQuizzes, getQuizResultsByUserId } from '@/lib/sheets'
 
 // Sparkle decoration component - Removed
 
+type LoomOEmbedResponse = {
+    thumbnail_url?: string
+    title?: string
+}
+
+function buildLoomShareUrlFromId(id: string) {
+    const trimmed = id?.trim()
+    return trimmed ? `https://www.loom.com/share/${trimmed}` : null
+}
+
+async function fetchLoomOEmbed(url: string) {
+    const endpoints = [
+        `https://www.loom.com/v1/oembed?url=${encodeURIComponent(url)}`,
+        `https://www.loom.com/api/oembed?url=${encodeURIComponent(url)}`,
+    ]
+
+    let lastError: unknown = null
+    for (const endpoint of endpoints) {
+        try {
+            const res = await fetch(endpoint, {
+                next: { revalidate: 60 * 60 * 24 },
+            })
+            if (!res.ok) {
+                lastError = new Error(`oEmbed request failed: ${res.status} ${res.statusText}`)
+                continue
+            }
+            return (await res.json()) as LoomOEmbedResponse
+        } catch (e) {
+            lastError = e
+        }
+    }
+    throw lastError ?? new Error('Failed to fetch Loom oEmbed')
+}
+
+async function getCourseThumbnail(course: any): Promise<string | null> {
+    const firstVideo = (course?.videos || [])[0]
+    if (!firstVideo) return null
+
+    const videoUrl = firstVideo?.video_url || firstVideo?.youtube_url
+    const loomId = firstVideo?.video_id
+    const loomUrl = (videoUrl && String(videoUrl).trim()) || buildLoomShareUrlFromId(String(loomId || '')) || null
+    if (!loomUrl) return null
+
+    try {
+        const oembed = await fetchLoomOEmbed(loomUrl)
+        return oembed.thumbnail_url ?? null
+    } catch {
+        return null
+    }
+}
+
 async function getCourseData(userId: string) {
-    const supabase = await createClient()
-
-    const { data: courses } = await supabase
-        .from('courses')
-        .select(`*, videos (*)`)
-        .order('sort_order')
-
-    if (!courses) return []
-
-    const { data: videoProgress } = await supabase
-        .from('video_progress')
-        .select('video_id, is_completed')
-        .eq('user_id', userId)
-
-    const { data: quizzes } = await supabase
-        .from('quizzes')
-        .select('id, course_id')
-
-    const { data: quizResults } = await supabase
-        .from('quiz_results')
-        .select('quiz_id, passed')
-        .eq('user_id', userId)
+    const [courses, videos, videoProgress, quizzes, quizResults] = await Promise.all([
+        getCourses(),
+        getVideos(),
+        getVideoProgressByUserId(userId),
+        getAllQuizzes(),
+        getQuizResultsByUserId(userId),
+    ])
 
     return courses.map(course => {
-        const courseVideos = (course.videos || []).sort((a: any, b: any) => a.sort_order - b.sort_order)
-        const courseQuizzes = quizzes?.filter(q => q.course_id === course.id) || []
+        const courseVideos = videos
+            .filter(v => v.course_id === course.id)
+            .sort((a: any, b: any) => a.sort_order - b.sort_order)
+        const courseQuizzes = quizzes.filter(q => q.course_id === course.id)
 
         const completedVideos = courseVideos.filter((video: { id: string }) =>
-            videoProgress?.some(vp => vp.video_id === video.id && vp.is_completed)
+            videoProgress.some(vp => vp.video_id === video.id && vp.is_completed)
         ).length
 
         const passedQuizzes = courseQuizzes.filter(quiz =>
-            quizResults?.some(qr => qr.quiz_id === quiz.id && qr.passed)
+            quizResults.some(qr => qr.quiz_id === quiz.id && qr.passed)
         ).length
 
         const progress = calculateProgress(
-            completedVideos,
-            courseVideos.length,
-            passedQuizzes,
-            courseQuizzes.length
+            completedVideos, courseVideos.length, passedQuizzes, courseQuizzes.length
         )
 
         return {
@@ -61,29 +99,27 @@ async function getCourseData(userId: string) {
 }
 
 export default async function DashboardPage() {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
+    // カスタムJWT認証
+    const cookieStore = await cookies()
+    const token = cookieStore.get(COOKIE_NAME)?.value
+    const session = token ? await verifyJwt(token) : null
 
-    if (!user) {
+    if (!session) {
         redirect('/login')
     }
 
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', user.id)
-        .single()
+    const { getProfileByEmail } = await import('@/lib/sheets')
+    const profile = await getProfileByEmail(session.email)
 
     if (!profile) {
         redirect('/onboarding')
     }
 
-    // Check if user is approved
     if (!profile.is_approved) {
         redirect('/approval-pending')
     }
 
-    const courses = await getCourseData(user.id)
+    const courses = await getCourseData(profile.user_id)
 
     // Sorting and grouping logic
     // 1. Sort by date desc (Public date)
@@ -107,6 +143,13 @@ export default async function DashboardPage() {
             const dateB = new Date(b.date || b.created_at).getTime()
             return dateB - dateA
         })
+
+    // Loom thumbnails（サーバー側で取得して埋め込み）
+    const [recentThumbnail, inProgressThumbnails, otherThumbnails] = await Promise.all([
+        recentCourse ? getCourseThumbnail(recentCourse) : Promise.resolve(null),
+        Promise.all(inProgressCourses.map(getCourseThumbnail)),
+        Promise.all(otherCourses.map(getCourseThumbnail)),
+    ])
 
     // Helper to get status label and color
     const getStatusInfo = (progress: number) => {
@@ -133,6 +176,7 @@ export default async function DashboardPage() {
                                 src="/logo-member.png"
                                 alt="HOWL"
                                 className="h-10 w-auto"
+                                style={{ height: '40px', width: 'auto', display: 'block' }}
                             />
                         </Link>
 
@@ -190,16 +234,15 @@ export default async function DashboardPage() {
                             <div className="flex flex-col lg:flex-row gap-8 items-center">
                                 {/* Thumbnail */}
                                 <div className="w-full lg:w-1/2 aspect-video rounded-xl overflow-hidden shadow-md relative">
-                                    {recentCourse.videos && recentCourse.videos[0]?.video_id ? (
-                                        <div
-                                            className="w-full h-full bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
-                                            style={{
-                                                backgroundImage: `url(https://img.youtube.com/vi/${recentCourse.videos[0].video_id}/hqdefault.jpg)`
-                                            }}
-                                        />
-                                    ) : (
-                                        <div className="w-full h-full bg-gradient-to-br from-[#2D4A4A] to-[#1E3535]" />
-                                    )}
+                                    <div
+                                        className="w-full h-full transition-transform duration-500 group-hover:scale-105 bg-cover bg-center"
+                                        style={{
+                                            backgroundImage: recentThumbnail
+                                                ? `url(${recentThumbnail})`
+                                                : 'linear-gradient(135deg, #2D4A4A 0%, #1E3535 100%)',
+                                        }}
+                                    />
+                                    {recentThumbnail && <div className="absolute inset-0 bg-black/20" />}
                                     <div className="absolute top-4 left-4">
                                         <span className="px-3 py-1 bg-black/60 backdrop-blur-sm text-white text-sm rounded-lg border border-white/20">
                                             {formatDate(recentCourse.date || recentCourse.created_at)} 公開
@@ -238,11 +281,9 @@ export default async function DashboardPage() {
                             受講中の講座
                         </h2>
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                            {inProgressCourses.map(course => {
+                            {inProgressCourses.map((course, idx) => {
                                 const status = getStatusInfo(course.progress)
-                                const thumbnail = course.videos && course.videos[0]?.video_id
-                                    ? `https://img.youtube.com/vi/${course.videos[0].video_id}/hqdefault.jpg`
-                                    : null
+                                const thumbnail = inProgressThumbnails[idx] ?? null
 
                                 return (
                                     <Link
@@ -301,11 +342,9 @@ export default async function DashboardPage() {
                         </div>
                     ) : (
                         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                            {otherCourses.map(course => {
+                            {otherCourses.map((course, idx) => {
                                 const status = getStatusInfo(course.progress)
-                                const thumbnail = course.videos && course.videos[0]?.video_id
-                                    ? `https://img.youtube.com/vi/${course.videos[0].video_id}/hqdefault.jpg`
-                                    : null
+                                const thumbnail = otherThumbnails[idx] ?? null
 
                                 return (
                                     <Link
@@ -350,6 +389,14 @@ export default async function DashboardPage() {
                             })}
                         </div>
                     )}
+                </section>
+
+                {/* タグでフィルタ（動画一覧） */}
+                <section>
+                    <h2 className="text-xl font-semibold text-[#2D4A4A] mb-4 flex items-center gap-2">
+                        🏷️ タグで動画を探す
+                    </h2>
+                    <DashboardClient profile={profile} />
                 </section>
             </main>
         </div>

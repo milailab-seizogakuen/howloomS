@@ -2,15 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { profileSchema, AI_TOOLS_OPTIONS, type ProfileFormData } from '@/lib/validations/profile'
-import type { User } from '@supabase/supabase-js'
 
 
 
 export default function OnboardingPage() {
     const router = useRouter()
-    const [user, setUser] = useState<User | null>(null)
+    const [userEmail, setUserEmail] = useState<string>('')
     const [isLoading, setIsLoading] = useState(true)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -29,33 +27,21 @@ export default function OnboardingPage() {
 
     useEffect(() => {
         const fetchUser = async () => {
-            const supabase = createClient()
-            const { data: { user } } = await supabase.auth.getUser()
+            const res = await fetch('/api/auth/me')
+            if (!res.ok) { router.push('/login'); return }
+            const { user } = await res.json()
 
-            if (!user) {
-                router.push('/login')
-                return
+            // すでにプロフィールが存在するか確認
+            const profileRes = await fetch('/api/profile')
+            if (profileRes.ok) {
+                const { profile } = await profileRes.json()
+                if (profile) { router.push('/dashboard'); return }
             }
 
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('id')
-                .eq('user_id', user.id)
-                .single()
-
-            if (profile) {
-                router.push('/dashboard')
-                return
-            }
-
-            setUser(user)
-            setFormData(prev => ({
-                ...prev,
-                name: user.user_metadata?.full_name || user.user_metadata?.name || '',
-            }))
+            setUserEmail(user.email)
+            setFormData(prev => ({ ...prev, name: user.name || '' }))
             setIsLoading(false)
         }
-
         fetchUser()
     }, [router])
 
@@ -86,24 +72,22 @@ export default function OnboardingPage() {
         }
 
         setIsSubmitting(true)
-
         try {
-            const supabase = createClient()
-
-            const { error: insertError } = await supabase
-                .from('profiles')
-                .insert({
-                    user_id: user!.id,
+            const res = await fetch('/api/profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
                     name: formData.name,
-                    avatar_url: user!.user_metadata?.avatar_url || null,
                     has_met: formData.has_met,
                     ai_tools: formData.ai_tools,
                     motivation: formData.motivation,
+                    is_approved: false,
+                    is_admin: false,
+                    avatar_url: null,
                 })
-
-            if (insertError) throw insertError
-
-            router.push('/dashboard')
+            })
+            if (!res.ok) throw new Error('insert failed')
+            router.push('/approval-pending')
         } catch {
             setError('保存に失敗しました。もう一度お試しください。')
         } finally {

@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 
 export default function ApprovalPendingPage() {
     const router = useRouter()
@@ -10,30 +9,19 @@ export default function ApprovalPendingPage() {
 
     const handleLogout = async () => {
         setIsLoading(true)
-        const supabase = createClient()
-        await supabase.auth.signOut()
+        await fetch('/api/auth/logout', { method: 'POST' })
         router.push('/login')
     }
 
-    // Check if user is already approved (in case they navigate here directly)
     useEffect(() => {
         const checkApproval = async () => {
-            const supabase = createClient()
-            const { data: { user } } = await supabase.auth.getUser()
+            const authRes = await fetch('/api/auth/me')
+            if (!authRes.ok) { router.push('/login'); return }
 
-            if (!user) {
-                router.push('/login')
-                return
-            }
-
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('is_approved')
-                .eq('user_id', user.id)
-                .single()
-
-            if (profile?.is_approved) {
-                router.push('/dashboard')
+            const profileRes = await fetch('/api/profile')
+            if (profileRes.ok) {
+                const { profile } = await profileRes.json()
+                if (profile?.is_approved) router.push('/dashboard')
             }
         }
         checkApproval()

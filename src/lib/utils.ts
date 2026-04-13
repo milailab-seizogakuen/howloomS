@@ -1,19 +1,17 @@
 /**
- * Extract YouTube video ID from various URL formats
+ * Extract video ID from Loom URLs
  */
 export function extractVideoId(url: string): string | null {
-    const patterns = [
-        /youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/,
-        /youtu\.be\/([a-zA-Z0-9_-]+)/,
-        /youtube\.com\/embed\/([a-zA-Z0-9_-]+)/,
-    ]
+    const pattern = /loom\.com\/(?:share|embed)\/([a-zA-Z0-9]+)/
+    const match = url.match(pattern)
+    return match ? match[1] : null
+}
 
-    for (const pattern of patterns) {
-        const match = url.match(pattern)
-        if (match) return match[1]
-    }
-
-    return null
+/**
+ * Get Loom thumbnail URL
+ */
+export function getLoomThumbnailUrl(videoId: string): string {
+    return `https://cdn.loom.com/sessions/thumbnails/${videoId}-with-play.gif`
 }
 
 /**

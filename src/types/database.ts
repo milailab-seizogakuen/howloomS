@@ -29,7 +29,13 @@ export interface Video {
     id: string
     course_id: string
     title: string
-    youtube_url: string
+    /**
+     * NOTE:
+     * Migration 005 で `youtube_url` は `video_url` にリネームされています（実体はLoom URL）。
+     * 既存コード互換のため、両方を許容します。
+     */
+    video_url?: string
+    youtube_url?: string
     video_id: string
     type: 'main' | 'supplementary'
     sort_order: number
@@ -71,6 +77,23 @@ export interface VideoProgress {
     video_id: string
     is_completed: boolean
     completed_at: string | null
+}
+
+export interface Tag {
+    id: string
+    name: string
+    category: 'type' | 'theme'
+    color_code: string
+    display_order: number
+}
+
+export interface VideoTag {
+    tag_id: string
+    tags: Tag
+}
+
+export interface VideoWithTags extends Video {
+    video_tags?: VideoTag[]
 }
 
 export interface Chat {
