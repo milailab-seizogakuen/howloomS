@@ -70,7 +70,7 @@ function LoginForm() {
                 >
                     <div className="text-center mb-8">
                         <h2 className="text-2xl font-semibold tracking-wide text-[#2D2D2D]">
-                            ログイン
+                            ログイン / 新規登録
                         </h2>
                         <p className="text-sm text-[#6B6B6B] mt-2">
                             メールアドレスとパスワードを入力してください
@@ -129,12 +129,6 @@ function LoginForm() {
                         </button>
                     </form>
 
-                    <p className="text-center text-sm text-[#8B7355] mt-6">
-                        アカウントをお持ちでない方は{' '}
-                        <a href="/signup" className="text-[#8B7BB8] font-medium hover:underline">
-                            新規登録
-                        </a>
-                    </p>
 
                     {/* 区切り線 */}
                     <div className="flex items-center gap-3 my-5">
