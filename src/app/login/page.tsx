@@ -129,6 +129,13 @@ function LoginForm() {
                         </button>
                     </form>
 
+                    <p className="text-center text-sm text-[#8B7355] mt-6">
+                        アカウントをお持ちでない方は{' '}
+                        <a href="/signup" className="text-[#8B7BB8] font-medium hover:underline">
+                            新規登録
+                        </a>
+                    </p>
+
 
                     {/* 区切り線 */}
                     <div className="flex items-center gap-3 my-5">
