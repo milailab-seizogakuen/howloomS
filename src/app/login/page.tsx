@@ -1,10 +1,13 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function LoginPage() {
+// useSearchParams を使うコンポーネントは Suspense でラップが必要
+function LoginForm() {
     const router = useRouter()
+    const searchParams = useSearchParams()
+    const oauthError = searchParams.get('error')
     const [email, setEmail] = useState('')
     const [password, setPassword] = useState('')
     const [isLoading, setIsLoading] = useState(false)
@@ -74,9 +77,13 @@ export default function LoginPage() {
                         </p>
                     </div>
 
-                    {error && (
+                    {(error || oauthError) && (
                         <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
-                            {error}
+                            {error ?? (
+                                oauthError === 'oauth_cancelled'
+                                    ? 'Googleログインがキャンセルされました'
+                                    : 'Googleログインに失敗しました。再度お試しください。'
+                            )}
                         </div>
                     )}
 
@@ -128,8 +135,39 @@ export default function LoginPage() {
                             新規登録
                         </a>
                     </p>
+
+                    {/* 区切り線 */}
+                    <div className="flex items-center gap-3 my-5">
+                        <div className="flex-1 h-px bg-[#E8E0D0]" />
+                        <span className="text-xs text-[#8B7355]">または</span>
+                        <div className="flex-1 h-px bg-[#E8E0D0]" />
+                    </div>
+
+                    {/* Google ログインボタン */}
+                    <a
+                        href="/api/auth/google/redirect"
+                        className="flex items-center justify-center gap-3 w-full py-3 rounded-xl border-2 font-medium text-[#2D2D2D] transition-all hover:bg-[#FAF7F0] hover:border-[#C9C0B0]"
+                        style={{ borderColor: '#E8E0D0', background: '#fff' }}
+                    >
+                        {/* Google SVG アイコン */}
+                        <svg width="20" height="20" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M44.5 20H24v8.5h11.8C34.7 33.9 30.1 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 20-7.6 20-21 0-1.3-.2-2.7-.5-4z" fill="#FFC107"/>
+                            <path d="M6.3 14.7l7 5.1C15.2 16.5 19.3 14 24 14c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3c-7.6 0-14.2 4.3-17.7 11.7z" fill="#FF3D00"/>
+                            <path d="M24 45c5.5 0 10.4-1.9 14.2-5.1l-6.6-5.6C29.6 35.9 27 37 24 37c-6 0-10.6-3.9-12-9.3l-7 5.4C8.2 40.7 15.5 45 24 45z" fill="#4CAF50"/>
+                            <path d="M44.5 20H24v8.5h11.8c-.9 2.6-2.7 4.8-5.2 6.3l6.6 5.6C41.3 37.1 45 31 45 24c0-1.3-.2-2.7-.5-4z" fill="#1976D2"/>
+                        </svg>
+                        Googleでログイン
+                    </a>
                 </div>
             </div>
         </div>
+    )
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense>
+            <LoginForm />
+        </Suspense>
     )
 }
